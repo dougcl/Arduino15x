@@ -93,8 +93,9 @@ const uint16_t STRING_LANGUAGE[2] = {
 	0x0409	// English
 };
 
-//Use Arduino Due instead of product from boards.txt
+
 #ifdef __SAM3S4A__
+//Use Arduino Due instead of product from boards.txt
 #undef USB_PRODUCT
 #endif
 
@@ -138,9 +139,12 @@ const DeviceDescriptor USB_DeviceDescriptor =
 	D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
 #endif //SAM3S4A
 
+//SAM3S never saw this come into play. Only used if get configuration descriptor request has 8 byte length. 
+//Not sure how or why that should invoke DEVICE_CLASS=0x02.
 const DeviceDescriptor USB_DeviceDescriptorA =
 	D_DEVICE(DEVICE_CLASS,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
 
+//SAM3S stalls the request for this data because it cannot run at high speed.
 const DeviceDescriptor USB_DeviceQualifier =
 	D_QUALIFIER(0x00,0x00,0x00,64,1);
 
@@ -238,7 +242,9 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	int r = len;
 	const uint8_t* data = (const uint8_t*)d;
 	
-#ifndef __SAM3S4A__	//SAM3S4A needs to use this to send to EP0 during setup.
+#ifndef __SAM3S4A__	
+	//SAM3S employs this handy routine to send to EP0 during setup.
+	//Might be wise to add condition for EP0 here as well.
     if (!_usbConfiguration)
     {
     	TRACE_CORE(printf("pb conf\n\r");)
@@ -249,6 +255,7 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	while (len)
 	{
 		#ifdef __SAM3S4A__
+		//This seems like a smarter way to determine endpoint sizes.
 		n = udd_get_endpoint_size_max(ep & 0x7);
 		#else
         if(ep==0) n = EP0_SIZE;
@@ -269,6 +276,9 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	return r;
 }
 
+//SAM3S: I hate these globals and seek to avoid them. If any EP0
+//transfers are more than 64 bytes, they MUST be avoided because I am 
+//not using UDD_Send to queue up data like the original did.
 int _cmark;
 int _cend;
 
@@ -395,6 +405,10 @@ int USBD_SendOtherInterfaces(void)
 static bool USBD_SendConfiguration(int maxlen)
 {
 #ifdef __SAM3S4A__
+	//Since configuration is greater than 64 bytes, and UDD_Send is no longer queuing, 
+	//SAM3S uses completely different (and much simpler) means of getting the descriptor.
+	//I did have to make an assumption about the upper limit on descriptor size though.
+	//See if you can follow the original Arduino code after the #else. It's crazy.
 	int len;
 	uint8_t config[512]; //not sure how big a config descriptor can be (CDC is 75)
 	len = USBD_GetConfiguration((uint8_t*)&config,maxlen);
@@ -506,7 +520,8 @@ static bool USBD_SendDescriptor(Setup& setup)
 	else if (USB_DEVICE_QUALIFIER == t)
 	{
 #ifdef __SAM3S4A__
-		//Is this a request to see if we can run at high speed?
+		//Is this a request to see if we can run at high speed? YES. 
+		//SAM3S is full speed only and must STALL this.
 		UDD_Stall();
 		return true;
 #else
@@ -547,6 +562,7 @@ static bool USBD_SendDescriptor(Setup& setup)
 static void USB_SendZlp( void )
 {
 	#ifdef __SAM3S4A__
+	//Send zero length packet.
 	//while(Is_udd_transmit_ready(EP0)){
 	if(Is_udd_transmit_ready(EP0)) {
 			while(!Is_udd_in_sent(EP0) || Is_udd_transmit_ready(EP0)) {
@@ -688,49 +704,6 @@ static void USB_ISR(void)
 {
 	doug++;
 	
-/*
-	//debug
-		if (
-		//Is_udd_suspend() || //RXSUSP
-		//Is_udd_any_wakeup() || //RXRSM,EXTRSM,WAKEUP
-		//Is_udd_endpoint_interrupt(0) || 
-		//Is_udd_sof() || //SOFINT
-		//Is_udd_ext_resume() || //EXTRSM
-		//Is_udd_resume() || //RXRSM
-		//Is_udd_wake_up() || //WAKEUP
-		Is_udd_reset() || //ENDBUSRES
-		//Is_udd_in_sent(0) || //TXCOMP
-		//Is_udd_setup_received(0) || //RXSETUP
-		//Is_udd_bank0_received(0) || //RX_DATA_BK0
-		//Is_udd_bank1_received(0) || //RX_DATA_BK1
-		//Is_udd_crc_error(0) || //ISOERROR
-		//Is_udd_stall(0) || //STALLSENT
-		//Is_udd_endpoint_stall_requested(0) || //FORCESTALL
-		false)
-		{
-		//if ((doug==33)&&(setup.bmRequestType==0x00)&&(setup.bRequest==0x09)&&(setup.wValueL==1)) {
-		//if ((doug==30)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wValueH==2)&&(setup.wLength==75)) {
-		//if ((doug==27)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wValueH==2)&&(setup.wLength==9)) {
-		//if ((doug==24)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wValueH==1)&&(setup.wLength==18)){
-		//if ((doug==22)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wValueH==6)){
-		//if ((doug==19)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wLength==255)&&(setup.wValueL==2)&&(setup.wValueH==3)){
-		//if ((doug==16)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wLength==255)&&(setup.wValueL==0)&&(setup.wValueH==3)){
-		//if ((doug==13)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wLength==255)&&(setup.wValueH==2)){
-		//if ((doug==10)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wLength==18)&&(setup.wValueH==1)){
-		//if ((doug==4)&&(setup.bmRequestType==0x80)&&(setup.bRequest==0x06)&&(setup.wLength==64)&&(setup.wValueH==1)){
-		//if ((doug==4) && Is_udd_bank0_received(EP0)) {
-		//if ((doug==5) && udd_byte_count(EP0)>0) {
-		//if ((doug==5 && udd_byte_count(EP0)==0)){
-		//if ((doug==4) && Is_udd_in_sent(0)) {
-		if ((doug==34)) {
-			pmc_enable_periph_clk(ID_PIOA);
-			PIOA->PIO_OER |= (1u << 16);
-			PIOA->PIO_SODR = (1u << 16);
-		}
-	}
-	//debug
-*/
-
 	
 #ifdef __SAM3S4A__
 	//saw these in testing, and will retrigger if not ack'd
@@ -756,6 +729,7 @@ static void USB_ISR(void)
 		// Configure EP 0
         UDD_InitEP(0, EP_TYPE_CONTROL);
 		#ifndef __SAM3S4A__
+		//not available or necessary on SAM3S
 		udd_enable_setup_received_interrupt(0);
 		#endif
 		
@@ -791,8 +765,9 @@ static void USB_ISR(void)
 		if (!UDD_ReceivedSetupInt())
 		{
 #ifdef __SAM3S4A__
+			//EP0 is not dual bank, always uses bank0
 			if(Is_udd_bank0_received(EP0) && udd_byte_count(EP0)==0){
-				//Host sent ZLP in Status Stage to ACK receipt of IN data.
+				//Host sent ZLP in Status Stage to ACK receipt of IN data. This ACKs ZLP.
 				udd_ack_bank0_received(EP0);
 			}
 #endif
@@ -893,6 +868,7 @@ static void USB_ISR(void)
 	    			UDD_Send8(EP0, 0);
                 }
 				#ifndef __SAM3S4A__
+				//TODO SAM3S should STALL this instead of ignore
                 if( setup.wValueL == 2) // TEST_MODE
                 {
                     // 7.1.20 Test Mode Support, 9.4.9 SetFeature
@@ -939,14 +915,11 @@ static void USB_ISR(void)
 					TRACE_CORE(printf(">>> EP0 Int: SET_CONFIGURATION REQUEST_DEVICE %d\r\n", setup.wValueL);)
 					UDD_InitEndpoints(EndPoints, (sizeof(EndPoints) / sizeof(EndPoints[0])));
 					_usbConfiguration = setup.wValueL;
-									
-						//#ifdef __SAM3S1A__
-						//Send ZLP to ACK status stage IN
-						//USB_SendZLP
-						//#endif
+
 #ifdef CDC_ENABLED
 					// Enable interrupt for CDC reception from host (OUT packet)
 					#ifndef __SAM3S4A__
+					//not available or necessary for the SAM3S
 					udd_enable_out_received_interrupt(CDC_RX);
 					#endif
 					udd_enable_endpoint_interrupt(CDC_RX);
@@ -983,7 +956,12 @@ static void USB_ISR(void)
 		{
 			TRACE_CORE(puts(">>> EP0 Int: Send packet\r\n");)
 			#ifndef __SAM3S4A__
-			//SAM3S4A handling in UDD_Send or UDD_Send8. 
+			//This is here to send IN stage data packets previously queued up by UDD_Send and UDD_Send8
+			//But it is also getting called after OUT stage data packets are read (because ok=true by default).
+			//Is it supposed to do that to ACK the IN token status stage after an OUT stage too?
+			//Note all OUT stages are immediately call this right after setup is cleared above.
+			//In any case, SAM3S moves the data send unambiguously to the end of the UDD_Send and UDD_Send8 routines,
+			//where I think they belong. Basically I dont like this ok boolean, and I am avoiding it.
 			UDD_ClearIN();	
 			#endif
 		}
@@ -1067,6 +1045,9 @@ void USBDevice_::poll()
 }
 
 #ifdef __SAM3S4A__
+//This is a rewrite of all the functions in uotghs_device.c. Everything had to move from
+//uotghs to udp because the SAM3S has a full speed USB transceiver. Might be best to get 
+//these out of here and into their own file? Or into variable.cpp if possible.
 uint32_t UDD_Send(uint32_t ep, const void* data, uint32_t len)
 {
 	const uint8_t *ptr_src = (const uint8_t* )data; //not sure why compiler complains without cast, although fine in uotghs_device.c.
@@ -1121,7 +1102,6 @@ void UDD_WaitIN(void)
 	if(Is_udd_transmit_ready(EP0)) {
 		while(!Is_udd_in_sent(EP0) || Is_udd_transmit_ready(EP0)) {}
 	}
-	//while(!Is_udd_in_sent(EP0)) {}
 }
 
 void UDD_WaitOUT(void)
@@ -1291,7 +1271,6 @@ void UDD_Attach(void)
 	//udd_enable_wake_up_interrupt();
 	//udd_enable_resume_interrupt();
 	//udd_enable_ext_resume_interrupt();
-
 
 	cpu_irq_restore(flags);
 }
