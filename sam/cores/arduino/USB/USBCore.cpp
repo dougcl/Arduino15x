@@ -129,15 +129,19 @@ const uint8_t STRING_MANUFACTURER[12] = USB_MANUFACTURER;
 #endif
 
 //	DEVICE DESCRIPTOR
-#ifdef CDC_ENABLED //SAM3S4A modification
+#ifdef CDC_ENABLED 
+#ifdef __SAM3S4A__ //SAM3S modification
 //Since IAD is present, the device should have be class EF.
 //see here https://msdn.microsoft.com/en-us/library/windows/hardware/ff540054(v=vs.85).aspx
 const DeviceDescriptor USB_DeviceDescriptor =
 	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
+#else 
+	D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
+#endif //__SAM3S4A__
 #else	
 const DeviceDescriptor USB_DeviceDescriptor =
 	D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
-#endif //SAM3S4A
+#endif //CDC_ENABLED
 
 //SAM3S never saw this come into play. Only used if get configuration descriptor request has 8 byte length. 
 //Not sure how or why that should invoke DEVICE_CLASS=0x02.
@@ -433,7 +437,7 @@ _Pragma("pack()")
 	USBD_InitControl(maxlen);
 	USBD_SendControl(0,&config,sizeof(ConfigDescriptor));
 	USBD_SendInterfaces();
-#endif //SAM3S4A
+#endif //__SAM3S4A__
 	return true;
 }
 
@@ -702,7 +706,10 @@ static void Test_Mode_Support( uint8_t wIndex )
 //	Endpoint 0 interrupt
 static void USB_ISR(void)
 {
+
+#ifdef __SAM3S4A__
 	doug++;
+#endif
 	
 	
 #ifdef __SAM3S4A__
@@ -742,6 +749,7 @@ static void USB_ISR(void)
 #ifdef CDC_ENABLED
   	if (Is_udd_endpoint_interrupt(CDC_RX))
 	{
+
 
 		#ifndef __SAM3S4A__
 		udd_ack_out_received(CDC_RX);
@@ -788,7 +796,7 @@ static void USB_ISR(void)
 			udd_configure_endpoint_direction(EP0, 0);
 		}	
 		UDD_ClearSetupInt();
-#endif //SAM3S4A
+#endif //__SAM3S4A__
 		if (requestType & REQUEST_DEVICETOHOST)
 		{
 			TRACE_CORE(puts(">>> EP0 Int: IN Request\r\n");)
@@ -796,9 +804,13 @@ static void USB_ISR(void)
 		}
 		else
 		{
-
 			TRACE_CORE(puts(">>> EP0 Int: OUT Request\r\n");)
-			UDD_ClearIN(); //ZLP to ACK Status IN Tx? (Status IN Tx follows Data OUT stage).
+			#ifdef __SAM3S4A__
+			//The only time we want to run UDD_ClearIN before processing OUT tokens is in the SET_ADDRESS case.
+			//So we call UDD_ClearIN within UDD_SetAddress instead of here.
+			#else
+			UDD_ClearIN(); 
+			#endif
 		}
 
 		bool ok = true;
@@ -944,10 +956,9 @@ static void USB_ISR(void)
 		}
 		else
 		{
+
 			TRACE_CORE(puts(">>> EP0 Int: ClassInterfaceRequest\r\n");)
-
 			UDD_WaitIN(); // Workaround: need tempo here, else CDC serial won't open correctly
-
 			USBD_InitControl(setup.wLength); // Max length of transfer
 			ok = USBD_ClassInterfaceRequest(setup);
 		}
@@ -955,13 +966,13 @@ static void USB_ISR(void)
 		if (ok)
 		{
 			TRACE_CORE(puts(">>> EP0 Int: Send packet\r\n");)
-			#ifndef __SAM3S4A__
-			//This is here to send IN stage data packets previously queued up by UDD_Send and UDD_Send8
-			//But it is also getting called after OUT stage data packets are read (because ok=true by default).
-			//Is it supposed to do that to ACK the IN token status stage after an OUT stage too?
-			//Note all OUT stages are immediately call this right after setup is cleared above.
-			//In any case, SAM3S moves the data send unambiguously to the end of the UDD_Send and UDD_Send8 routines,
-			//where I think they belong. Basically I dont like this ok boolean, and I am avoiding it.
+			#ifdef __SAM3S4A__	
+			//ACK status stage after processing OUT tokens unless SET_ADDRESS
+			if (!(requestType & REQUEST_DEVICETOHOST) && !(setup.bRequest==SET_ADDRESS)) 
+			{
+				UDD_ClearIN();
+			}
+			#else
 			UDD_ClearIN();	
 			#endif
 		}
@@ -1142,7 +1153,7 @@ void UDD_SetAddress(uint32_t addr)
 	//To make this happen a ZLP has to be sent. This 
 	//ZLP acks the status packet that followed the 
 	//address OUT packet.
-	//USB_SendZlp();
+	UDD_ClearIN();
 	//Now set the address
 	udd_configure_address(addr);
 	udd_enable_address();
@@ -1329,7 +1340,7 @@ _Pragma("pack()")
 	return len; //this is the length at *data
 }
 
-#endif //SAM3S4A
+#endif //__SAM3S4A__
 
 
 
