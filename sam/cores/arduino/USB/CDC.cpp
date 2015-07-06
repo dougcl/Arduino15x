@@ -180,8 +180,31 @@ void Serial_::accept(void)
 	} while (__STREXW(1, &guard) != 0); // retry until write succeed
 
 	ring_buffer *buffer = &cdc_rx_buffer;
-	uint32_t i = (uint32_t)(buffer->head+1) % CDC_SERIAL_BUFFER_SIZE;
+	#ifdef __SAM3S4A__
+	//SAM3S receives all OUT token data in fifo and holds it there until ACK'd. RXBYTECNT indicates
+	//The number of bytes available in the fifo. When data is popped from the fifo, the hardware
+	//leaves RXBYTECNT unaltered (it does not decrement). Therefore, all bytes must be read from
+	//the fifo at once, and then the fifo must be cleared. So we have to check the ring buffer
+	//to see if there is enough room to accommodate the bytes available in the fifo. If not, then
+	//we can't read the fifo, and we have to block further writes from the host. In this situation,
+	//the RX interrupt will keep retriggering until there is room in the ring buffer to accept the data.
+	//Short version: Must read entire fifo on the SAM3S or nothing at all. 
+	uint32_t len = CDC_SERIAL_BUFFER_SIZE - this->available(); //unused bytes in buffer
+	uint32_t fifo_count = USBD_Available(CDC_RX); //bytes available to be read in SAM3S fifo
+	if(fifo_count && (fifo_count <= len)) {
+		uint8_t data_tmp[64];//can't read more than 64 bytes on CDC_RX
+		len = USBD_Recv(CDC_RX,&data_tmp,fifo_count); //read all available bytes and clear fifo
+		//Now copy data into ring buffer
 
+		for(int i=0; i<len; i++)
+		{
+			buffer->buffer[buffer->head] = data_tmp[i];
+			buffer->head = (uint32_t)(buffer->head+1) % CDC_SERIAL_BUFFER_SIZE;
+		}
+	}
+
+	#else
+	uint32_t i = (uint32_t)(buffer->head+1) % CDC_SERIAL_BUFFER_SIZE;
 	// if we should be storing the received character into the location
 	// just before the tail (meaning that the head would advance to the
 	// current location of the tail), we're about to overflow the buffer
@@ -189,11 +212,7 @@ void Serial_::accept(void)
 	while (i != buffer->tail) {
 		uint32_t c;
 		if (!USBD_Available(CDC_RX)) {
-			#ifdef __SAM3S4A__
-			udd_ack_bank0_received(CDC_RX); //this will need to be fixed because this EP is dual bank.
-			#else
 			udd_ack_fifocon(CDC_RX);
-			#endif
 			break;
 		}
 		c = USBD_Recv(CDC_RX);
@@ -203,7 +222,8 @@ void Serial_::accept(void)
 
 		i = (i + 1) % CDC_SERIAL_BUFFER_SIZE;
 	}
-
+	#endif
+	
 	// release the guard
 	guard = 0;
 }

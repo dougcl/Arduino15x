@@ -56,6 +56,13 @@ struct pll_config {
 	uint32_t ctrl;
 };
 int USBD_GetConfiguration(uint8_t* data,uint32_t len);
+
+#ifdef CDC_ENABLED
+bool cdc_tx_banks_idle=true; //true if both tx banks are idle.
+bool cdc_tx_banks_busy=false; //true if both tx banks are in use.
+int cdc_rx_bank_number=0; //track which bank to ack
+#endif
+
 #endif //__SAM3S4A__
 
 static const uint32_t EndPoints[] =
@@ -209,12 +216,25 @@ uint32_t USBD_Recv(uint32_t ep, void* d, uint32_t len)
 	
 	while (n--)
 		*dst++ = UDD_Recv8(ep & 0xF);
+	#ifdef __SAM3S4A__
+	//SAM3S fifo byte count (RXBYTECNT) is not decremented by the hardware when fifo is read.
+	//You should always check RXBYTECNT and pass it in as len to this function, or RXBYTECNT
+	//will not be decremented, and the read will not be ack'd. You will have trouble otherwise 
+	//because 1) there will be less data than RXBYTECNT remaining in the fifo, and 2) the fifo 
+	//will be blocked because the read has not been ACK'd.
+	if(len==UDD_FifoByteCount(ep)) //release empty buffer
+		UDD_ReleaseRX(ep);
+	#else
 	if (len && !UDD_FifoByteCount(ep & 0xF)) // release empty buffer
 		UDD_ReleaseRX(ep & 0xF);
-
+	#endif //SAM3S4A
 	return len;
 }
 
+
+//SAM3S does not decrement fifo byte count (RXBYTECNT) in hardware when the fifo is read.
+//So reading one byte and hoping for a decrement is asking for trouble. It will only work
+//if there is exactly one byte in the fifo. 
 //	Recv 1 byte if ready
 uint32_t USBD_Recv(uint32_t ep)
 {
@@ -224,6 +244,7 @@ uint32_t USBD_Recv(uint32_t ep)
 	else
 		return c;
 }
+
 
 //	Space in send EP
 //uint32_t USBD_SendSpace(uint32_t ep)
@@ -246,9 +267,14 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	int r = len;
 	const uint8_t* data = (const uint8_t*)d;
 	
-#ifndef __SAM3S4A__	
+#ifdef __SAM3S4A__
 	//SAM3S employs this handy routine to send to EP0 during setup.
-	//Might be wise to add condition for EP0 here as well.
+    if ((!_usbConfiguration) && (ep!=EP0))
+    {
+    	TRACE_CORE(printf("pb conf\n\r");)
+		return -1;
+    }
+#else
     if (!_usbConfiguration)
     {
     	TRACE_CORE(printf("pb conf\n\r");)
@@ -259,8 +285,9 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	while (len)
 	{
 		#ifdef __SAM3S4A__
-		//This seems like a smarter way to determine endpoint sizes.
-		n = udd_get_endpoint_size_max(ep & 0x7);
+		//n = udd_get_endpoint_size_max(ep & 0x7);
+		//All endpoints (except ISO) are 64 on SAM3S and we are not using ISO here.
+		n=64;
 		#else
         if(ep==0) n = EP0_SIZE;
         else n =  EPX_SIZE;
@@ -749,8 +776,6 @@ static void USB_ISR(void)
 #ifdef CDC_ENABLED
   	if (Is_udd_endpoint_interrupt(CDC_RX))
 	{
-
-
 		#ifndef __SAM3S4A__
 		udd_ack_out_received(CDC_RX);
 		#endif
@@ -927,8 +952,9 @@ static void USB_ISR(void)
 					TRACE_CORE(printf(">>> EP0 Int: SET_CONFIGURATION REQUEST_DEVICE %d\r\n", setup.wValueL);)
 					UDD_InitEndpoints(EndPoints, (sizeof(EndPoints) / sizeof(EndPoints[0])));
 					_usbConfiguration = setup.wValueL;
-
+					
 #ifdef CDC_ENABLED
+					
 					// Enable interrupt for CDC reception from host (OUT packet)
 					#ifndef __SAM3S4A__
 					//not available or necessary for the SAM3S
@@ -1069,7 +1095,13 @@ uint32_t UDD_Send(uint32_t ep, const void* data, uint32_t len)
 	if (len > n)
 		len = n; //Caller can make repeated calls, checking return val each time.
 
-	//while(Is_udd_transmit_ready(ep)) {}
+	//Note EP0 is single bank so this wait on Is_udd_transmit_ready is fine.
+	//TODO Dual bank is not being used here for dual bank endpoints (eg. CDC_TX). 
+	//Need to not wait on Is_udd_transmit_ready on the second transmit to get bank1 to fill. 
+	//There will probably then be an extra Is_udd_in_sent interrupt at the end of the writes,
+	//so that would need to be cleared after all the writes are complete, otherwise re-trigger.
+	//This would probably need to be tracked with bank globals so that these requirements are satisfied.
+	//Implementing dual bank should double the transmit bandwidth.
 	if(Is_udd_transmit_ready(ep)) {
 		while(!Is_udd_in_sent(ep) || Is_udd_transmit_ready(ep)) {}
 	}
@@ -1079,6 +1111,7 @@ uint32_t UDD_Send(uint32_t ep, const void* data, uint32_t len)
 		udd_endpoint_fifo_write(ep & 0x7, *ptr_src++);
 		
 	udd_set_transmit_ready(ep);
+	//Default to single bank. Always works, but 50% bandwidth
 	while(!Is_udd_in_sent(ep)) {}
 	udd_ack_in_sent(ep & 0x7);
 	return len;
@@ -1117,12 +1150,14 @@ void UDD_WaitIN(void)
 
 void UDD_WaitOUT(void)
 {
+	//this is always called for EP0, so single bank ok
 	while (!Is_udd_bank0_received(EP0))
 		;
 }
 
 void UDD_ClearOUT(void)
 {
+	//this is always called for EP0, so single bank ok
 	udd_ack_bank0_received(EP0);
 }
 
@@ -1191,8 +1226,11 @@ void UDD_InitEndpoints(const uint32_t* eps_table, const uint32_t ul_eps_table_si
 	udd_enable_endpoint(CDC_ENDPOINT_ACM);
 	udd_enable_endpoint(CDC_ENDPOINT_OUT);
 	udd_enable_endpoint(CDC_ENDPOINT_IN);	
-	
+	cdc_tx_banks_idle=true; //true if both tx banks are idle.
+	cdc_tx_banks_busy=false; //true if both tx banks are in use.
+	cdc_rx_bank_number=0; //track which bank to ack
 #endif	
+
 }
 
 uint32_t UDD_FifoByteCount(uint32_t ep)
@@ -1200,9 +1238,33 @@ uint32_t UDD_FifoByteCount(uint32_t ep)
 	return udd_byte_count(ep & 0x7);
 }
 
+
 void UDD_ReleaseRX(uint32_t ep)
 {
-	udd_ack_bank0_received(ep & 0x7);
+	if (ep==EP0){
+		//EP0 is single bank
+		udd_ack_bank0_received(ep);
+	} else if (ep==CDC_RX) {
+		//CDC_RX is dual bank... need to track
+		if (Is_udd_all_banks_received(ep)) {
+			// The only way is to use cdc_rx_bank_number
+		} else if (Is_udd_bank0_received(ep)) {
+			// Must be bank0
+			cdc_rx_bank_number = 0;
+		} else {
+			// Must be bank1
+			cdc_rx_bank_number = 1;
+		}
+		if (cdc_rx_bank_number == 0) {
+			udd_ack_bank0_received(ep);
+			if (udd_get_endpoint_bank_max_nbr(ep) > 1) {
+				cdc_rx_bank_number = 1;
+			}
+		} else {
+			udd_ack_bank1_received(ep);
+			cdc_rx_bank_number = 0;
+		}	
+	}	
 }
 
 void UDD_Stall(void)
