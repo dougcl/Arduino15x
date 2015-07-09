@@ -189,13 +189,19 @@ void Serial_::accept(void)
 	//we can't read the fifo, and we have to block further writes from the host. In this situation,
 	//the RX interrupt will keep retriggering until there is room in the ring buffer to accept the data.
 	//Short version: Must read entire fifo on the SAM3S or nothing at all. 
+	
+	//TODO if requests longer than about 80 bytes are expected, these NOPs allow large lines to be 
+	//submitted. Not sure why. Do we have to wait for data to be clocked into fifo? Or is there 
+	//a delay required for the Arduino serial monitor?
+	//for (int i = 0; i < 1000; i++) {
+	//	__NOP();
+	//}
 	uint32_t len = CDC_SERIAL_BUFFER_SIZE - this->available(); //unused bytes in buffer
 	uint32_t fifo_count = USBD_Available(CDC_RX); //bytes available to be read in SAM3S fifo
 	if(fifo_count && (fifo_count <= len)) {
 		uint8_t data_tmp[64];//can't read more than 64 bytes on CDC_RX
 		len = USBD_Recv(CDC_RX,&data_tmp,fifo_count); //read all available bytes and clear fifo
 		//Now copy data into ring buffer
-
 		for(int i=0; i<len; i++)
 		{
 			buffer->buffer[buffer->head] = data_tmp[i];
@@ -330,11 +336,13 @@ Serial_::operator bool()
 
 Serial_ SerialUSB;
 
-#endif
-
 #ifdef __SAM3S4A__
 //Allow USBCore.cpp to fetch the configuration descriptor
 const CDCDescriptor* CDC_GetDescriptor(void){
 	return &_cdcInterface;
 }
-#endif
+#endif //SAM3S4A
+
+#endif //CDC_ENABLED
+
+

@@ -58,9 +58,8 @@ struct pll_config {
 int USBD_GetConfiguration(uint8_t* data,uint32_t len);
 
 #ifdef CDC_ENABLED
-bool cdc_tx_banks_idle=true; //true if both tx banks are idle.
-bool cdc_tx_banks_busy=false; //true if both tx banks are in use.
-int cdc_rx_bank_number=0; //track which bank to ack
+static volatile bool cdc_tx_banks_idle=true; //true if both tx banks are idle.
+static volatile int cdc_rx_bank_number=0; //track which bank to ack
 #endif
 
 #endif //__SAM3S4A__
@@ -138,7 +137,7 @@ const uint8_t STRING_MANUFACTURER[12] = USB_MANUFACTURER;
 //	DEVICE DESCRIPTOR
 #ifdef CDC_ENABLED 
 #ifdef __SAM3S4A__ //SAM3S modification
-//Since IAD is present, the device should have be class EF.
+//Since IAD is present, the device should be class EF.
 //see here https://msdn.microsoft.com/en-us/library/windows/hardware/ff540054(v=vs.85).aspx
 const DeviceDescriptor USB_DeviceDescriptor =
 	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
@@ -285,7 +284,6 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 	while (len)
 	{
 		#ifdef __SAM3S4A__
-		//n = udd_get_endpoint_size_max(ep & 0x7);
 		//All endpoints (except ISO) are 64 on SAM3S and we are not using ISO here.
 		n=64;
 		#else
@@ -295,7 +293,6 @@ uint32_t USBD_Send(uint32_t ep, const void* d, uint32_t len)
 		if (n > len)
 			n = len;
 		len -= n;
-		
 		UDD_Send(ep & 0xF, data, n);
 		data += n;
     }
@@ -734,11 +731,7 @@ static void Test_Mode_Support( uint8_t wIndex )
 static void USB_ISR(void)
 {
 
-#ifdef __SAM3S4A__
-	doug++;
-#endif
-	
-	
+
 #ifdef __SAM3S4A__
 	//saw these in testing, and will retrigger if not ack'd
 	if (Is_udd_suspend()){
@@ -747,7 +740,19 @@ static void USB_ISR(void)
 	if (Is_udd_any_wakeup()){
 		udd_ack_wakeups();
 	}
-#endif
+
+#ifdef CDC_ENABLED	
+	if (Is_udd_endpoint_interrupt(CDC_TX)){
+		if (Is_udd_in_sent(CDC_TX)) { 
+			//CDC_TX is dual bank. Ack and decrement bank status.
+			udd_ack_in_sent(CDC_TX);
+			cdc_tx_banks_idle=true;
+		}
+	}
+
+#endif //CDC_ENABLED
+
+#endif //SAM3S4A
 
 //    printf("ISR=0x%X\n\r", UOTGHS->UOTGHS_DEVISR); // jcb
 //    if( iii++ > 1500 ) while(1); // jcb
@@ -959,6 +964,8 @@ static void USB_ISR(void)
 					#ifndef __SAM3S4A__
 					//not available or necessary for the SAM3S
 					udd_enable_out_received_interrupt(CDC_RX);
+					#else
+					udd_enable_endpoint_interrupt(CDC_TX);
 					#endif
 					udd_enable_endpoint_interrupt(CDC_RX);
 #endif
@@ -1095,25 +1102,58 @@ uint32_t UDD_Send(uint32_t ep, const void* data, uint32_t len)
 	if (len > n)
 		len = n; //Caller can make repeated calls, checking return val each time.
 
-	//Note EP0 is single bank so this wait on Is_udd_transmit_ready is fine.
-	//TODO Dual bank is not being used here for dual bank endpoints (eg. CDC_TX). 
-	//Need to not wait on Is_udd_transmit_ready on the second transmit to get bank1 to fill. 
-	//There will probably then be an extra Is_udd_in_sent interrupt at the end of the writes,
-	//so that would need to be cleared after all the writes are complete, otherwise re-trigger.
-	//This would probably need to be tracked with bank globals so that these requirements are satisfied.
-	//Implementing dual bank should double the transmit bandwidth.
-	if(Is_udd_transmit_ready(ep)) {
-		while(!Is_udd_in_sent(ep) || Is_udd_transmit_ready(ep)) {}
+	//Note EP0 is single bank, CDC_TX is dual bank.
+	if (ep==CDC_TX){
+		//prevent interrupt from acking other bank before this bank is written
+		udd_disable_endpoint_interrupt(ep);
+		//CDC_TX is dual bank. Only wait if thought to be idle.
+		if ((cdc_tx_banks_idle)) { 
+			if(Is_udd_transmit_ready(ep)) {
+				while(!Is_udd_in_sent(ep) || Is_udd_transmit_ready(ep)) {}
+				udd_ack_in_sent(ep);
+			} else if (Is_udd_in_sent(ep)){
+				udd_ack_in_sent(ep);
+			}
+		}
+		 
+	} else {
+		//default to single bank operation (always works)
+		if(Is_udd_transmit_ready(ep)) {
+			while(!Is_udd_in_sent(ep) || Is_udd_transmit_ready(ep)) {}
+			udd_ack_in_sent(ep);
+		} else if (Is_udd_in_sent(ep)){
+			udd_ack_in_sent(ep);
+		}
 	}
 
-
+	//write to the bank
 	for (i = 0; i < len; ++i)
 		udd_endpoint_fifo_write(ep & 0x7, *ptr_src++);
 		
-	udd_set_transmit_ready(ep);
-	//Default to single bank. Always works, but 50% bandwidth
-	while(!Is_udd_in_sent(ep)) {}
-	udd_ack_in_sent(ep & 0x7);
+	
+	if (ep==CDC_TX) {
+		if (cdc_tx_banks_idle) {
+			//if banks are idle, don't wait for TXPKTRDY to clear
+		} else {
+			//Other bank is busy. Wait for TXPKTRDY to clear on it, then set TXPKTRDY on the current bank
+			if(Is_udd_transmit_ready(ep)) {
+				while(!Is_udd_in_sent(ep) || Is_udd_transmit_ready(ep)) {}
+				udd_ack_in_sent(ep);
+			} else if (Is_udd_in_sent(ep)){
+				udd_ack_in_sent(ep);
+			}
+		}
+		udd_set_transmit_ready(ep);
+		cdc_tx_banks_idle=false;
+		//listen for transition back to idle
+		udd_enable_endpoint_interrupt(ep);
+	} else {
+		//Default to single bank. Always works
+		udd_set_transmit_ready(ep);
+		while(!Is_udd_in_sent(ep)) {}
+		udd_ack_in_sent(ep & 0x7);
+	}
+
 	return len;
 }
 
@@ -1145,6 +1185,9 @@ void UDD_WaitIN(void)
 {
 	if(Is_udd_transmit_ready(EP0)) {
 		while(!Is_udd_in_sent(EP0) || Is_udd_transmit_ready(EP0)) {}
+		udd_ack_in_sent(EP0);
+	} else if (Is_udd_in_sent(EP0)){
+		udd_ack_in_sent(EP0);
 	}
 }
 
@@ -1174,6 +1217,9 @@ void UDD_Send8(uint32_t ep,  uint8_t data )
 	//	;
 	if(Is_udd_transmit_ready(ep)) {
 		while(!Is_udd_in_sent(ep) || Is_udd_transmit_ready(ep)) {}
+		udd_ack_in_sent(ep);
+	} else if (Is_udd_in_sent(ep)){
+		udd_ack_in_sent(ep);
 	}
 	udd_endpoint_fifo_write(ep & 0x7, data);
 	udd_set_transmit_ready(ep & 0x7);
@@ -1227,7 +1273,6 @@ void UDD_InitEndpoints(const uint32_t* eps_table, const uint32_t ul_eps_table_si
 	udd_enable_endpoint(CDC_ENDPOINT_OUT);
 	udd_enable_endpoint(CDC_ENDPOINT_IN);	
 	cdc_tx_banks_idle=true; //true if both tx banks are idle.
-	cdc_tx_banks_busy=false; //true if both tx banks are in use.
 	cdc_rx_bank_number=0; //track which bank to ack
 #endif	
 
