@@ -142,6 +142,7 @@ const uint8_t STRING_MANUFACTURER[12] = USB_MANUFACTURER;
 const DeviceDescriptor USB_DeviceDescriptor =
 	D_DEVICE(0xEF,0x02,0x01,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
 #else 
+const DeviceDescriptor USB_DeviceDescriptor =
 	D_DEVICE(0x00,0x00,0x00,64,USB_VID,USB_PID,0x100,IMANUFACTURER,IPRODUCT,0,1);
 #endif //__SAM3S4A__
 #else	
@@ -196,7 +197,10 @@ public:
 //	Number of bytes, assumes a rx endpoint
 uint32_t USBD_Available(uint32_t ep)
 {
+	#ifndef __SAM3S4A__
+	//SAM3S4A Handle diable/enable CDC_RX interrupts elsewhere as necessary 
 	LockEP lock(ep);
+	#endif
 	return UDD_FifoByteCount(ep & 0xF);
 }
 
@@ -206,12 +210,18 @@ uint32_t USBD_Recv(uint32_t ep, void* d, uint32_t len)
 {
 	if (!_usbConfiguration)
 		return -1;
-
+		
+	
+	#ifndef __SAM3S4A__
+	//SAM3S4A Handle diable/enable CDC_RX interrupts elsewhere as necessary 
 	LockEP lock(ep);
+	#endif
+
 	uint32_t n = UDD_FifoByteCount(ep & 0xF);
 	len = min(n,len);
 	n = len;
 	uint8_t* dst = (uint8_t*)d;
+	
 	
 	while (n--)
 		*dst++ = UDD_Recv8(ep & 0xF);
@@ -783,11 +793,16 @@ static void USB_ISR(void)
 	{
 		#ifndef __SAM3S4A__
 		udd_ack_out_received(CDC_RX);
-		#endif
-
 		// Handle received bytes
 		if (USBD_Available(CDC_RX))
 			SerialUSB.accept();
+		#else
+		// Handle received bytes and disable interrupt so lower priority Serial_::read() can read buffer
+		if (USBD_Available(CDC_RX)) {
+			udd_disable_endpoint_interrupt(CDC_RX);
+			SerialUSB.accept();
+		}
+		#endif //SAM3S4A
 	}
 
 	if (Is_udd_sof())
@@ -1098,7 +1113,7 @@ uint32_t UDD_Send(uint32_t ep, const void* data, uint32_t len)
 	uint32_t i;
 	uint32_t n;
 	
-	n = udd_get_endpoint_size_max(ep & 0x7);
+	n=64; //All endpoints (except ISO) are 64 on SAM3S and we are not using ISO here.
 	if (len > n)
 		len = n; //Caller can make repeated calls, checking return val each time.
 

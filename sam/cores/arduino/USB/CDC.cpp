@@ -19,14 +19,20 @@
 #include "Reset.h"
 
 #ifdef CDC_ENABLED
+
+#ifndef __SAM3S4A__
 #define CDC_SERIAL_BUFFER_SIZE	512
+#else
+//increase to improve CDC_RX performance for large data transfers
+#define CDC_SERIAL_BUFFER_SIZE	1024 
+#endif//SAM3S4A
 
 /* For information purpose only since RTS is not always handled by the terminal application */
 #define CDC_LINESTATE_DTR		0x01 // Data Terminal Ready
 #define CDC_LINESTATE_RTS		0x02 // Ready to Send
 
 #define CDC_LINESTATE_READY		(CDC_LINESTATE_RTS | CDC_LINESTATE_DTR)
-
+static volatile int doug=0; //debug
 struct ring_buffer
 {
 	uint8_t buffer[CDC_SERIAL_BUFFER_SIZE];
@@ -178,27 +184,22 @@ void Serial_::accept(void)
 			return;  // busy
 		}
 	} while (__STREXW(1, &guard) != 0); // retry until write succeed
-
 	ring_buffer *buffer = &cdc_rx_buffer;
 	#ifdef __SAM3S4A__
-	//SAM3S receives all OUT token data in fifo and holds it there until ACK'd. RXBYTECNT indicates
+	//SAM3S receives OUT token data in fifo and holds it there until ACK'd. RXBYTECNT indicates
 	//The number of bytes available in the fifo. When data is popped from the fifo, the hardware
 	//leaves RXBYTECNT unaltered (it does not decrement). Therefore, all bytes must be read from
 	//the fifo at once, and then the fifo must be cleared. So we have to check the ring buffer
 	//to see if there is enough room to accommodate the bytes available in the fifo. If not, then
 	//we can't read the fifo, and we have to block further writes from the host. In this situation,
 	//the RX interrupt will keep retriggering until there is room in the ring buffer to accept the data.
+	//Because of this, we have to disable CDC_RX interrupt to allow user code to read the data (see Serial_:read()).
 	//Short version: Must read entire fifo on the SAM3S or nothing at all. 
-	
-	//TODO if requests longer than about 80 bytes are expected, these NOPs allow large lines to be 
-	//submitted. Not sure why. Do we have to wait for data to be clocked into fifo? Or is there 
-	//a delay required for the Arduino serial monitor?
-	//for (int i = 0; i < 1000; i++) {
-	//	__NOP();
-	//}
-	uint32_t len = CDC_SERIAL_BUFFER_SIZE - this->available(); //unused bytes in buffer
+	uint32_t len;
+	uint32_t bytes_free = CDC_SERIAL_BUFFER_SIZE - this->available(); // bytes free in ring buffer
 	uint32_t fifo_count = USBD_Available(CDC_RX); //bytes available to be read in SAM3S fifo
-	if(fifo_count && (fifo_count <= len)) {
+	if((fifo_count) && (bytes_free > fifo_count)) {
+		//bytes available in fifo, and enough space in ring buffer. Read the available bytes into the ring buffer.
 		uint8_t data_tmp[64];//can't read more than 64 bytes on CDC_RX
 		len = USBD_Recv(CDC_RX,&data_tmp,fifo_count); //read all available bytes and clear fifo
 		//Now copy data into ring buffer
@@ -257,7 +258,7 @@ int Serial_::peek(void)
 int Serial_::read(void)
 {
 	ring_buffer *buffer = &cdc_rx_buffer;
-
+	
 	// if the head isn't ahead of the tail, we don't have any characters
 	if (buffer->head == buffer->tail)
 	{
@@ -267,8 +268,38 @@ int Serial_::read(void)
 	{
 		unsigned char c = buffer->buffer[buffer->tail];
 		buffer->tail = (unsigned int)(buffer->tail + 1) % CDC_SERIAL_BUFFER_SIZE;
+		#ifdef __SAM3S4A__
+		//The first call of accept() is triggered by the CDC_RX interrupt. The interrupt is desabled 
+		//and the data is read into the ring buffer. This allows user code to call Serial_::read() to 
+		//drain the ring buffer. Otherwise, the interrupts would continue to pre-empt user code, 
+		//preventing user code from reading the data, and finally the buffer would fill and deadlock would result.
+		//Each read() checks again for data available in the fifo. If there is data there and the ring buffer has
+		//room, accept() will be called again to draw the fifo data into the ring buffer. Finally when there
+		//is no more data in the fifo (nothing coming in from the host) the interrupt is re-enabled to wake up if 
+		//the host sends more data later, and the process is started all over again. So the main problem here is 
+		//that the host can fill the fifo in 64 byte chunks, but Serial_:read() can only read one byte at a time. 
+		//This means the host is blocked from sending unless the ring buffer capacity is increased.
+		//There is no implementation here that can read the entire buffer. Is there? This cuts read bandwidth significantly.
+		//Seems like user code should be able to call Serial_::available() to determine the byte count, and pull it out in one
+		//call. ex: Serial_::read(&data,count). Such a method could return the actual number of bytes read just in case.
+		uint32_t bytes_free = CDC_SERIAL_BUFFER_SIZE - this->available(); //bytes free in ring buffer
+		uint32_t fifo_count = USBD_Available(CDC_RX); //bytes available to be read in SAM3S fifo
+		if (fifo_count) {
+			if (bytes_free > fifo_count) {
+				//read fifo into ring buffer
+				accept();
+			}
+		} else {
+			//All bytes read from fifo and buffer. Turn calling of accept() back over to interrupt.
+			if (!this->available()){
+				udd_enable_endpoint_interrupt(CDC_RX);
+			}
+		}
+		#else	
 		if (USBD_Available(CDC_RX))
 			accept();
+		#endif
+		
 		return c;
 	}
 }
