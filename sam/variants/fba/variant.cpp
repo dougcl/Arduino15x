@@ -41,8 +41,9 @@
  *  17       NPCS3 |  PA5   | "NPCS3"
  *  18       TWCK0 |  PA4   | "SCL"
  *  19       TWD0  |  PA3   | "SDA"
- *  20             |  PA1   | "BUS1"
- *  21             |  PA0   | "BUS0"
+ *  20             |  PA2   | "DO-AI-SELECT"
+ *  21             |  PA1   | "BUS1"
+ *  22             |  PA0   | "BUS0"
  */
 
 #ifdef __cplusplus
@@ -94,11 +95,13 @@ extern const PinDescription g_APinDescription[]=
   // 18/19 - TWI0
   { PIOA, PIO_PA4A_TWCK0,      ID_PIOA, PIO_PERIPH_A, PIO_DEFAULT, PIN_ATTR_DIGITAL,                  NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // TWCK0 - SCL0
   { PIOA, PIO_PA3A_TWD0,       ID_PIOA, PIO_PERIPH_A, PIO_DEFAULT, PIN_ATTR_DIGITAL,                  NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // TWD0 - SDA0
-  // 20/21 Bus select
+  // 20 AI Select
+  { PIOA, PIO_PA2,            ID_PIOA, PIO_OUTPUT_0, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // DO-AI_SELECT
+  // 21/22 Bus select
   { PIOA, PIO_PA1,             ID_PIOA, PIO_INPUT, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // BUS1
   { PIOA, PIO_PA0,             ID_PIOA, PIO_INPUT, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // BUS0
 
-  // 22 - TWI0 all pins
+  // 23- TWI0 all pins
   { PIOA, PIO_PA3A_TWD0|PIO_PA4A_TWCK0, ID_PIOA, PIO_PERIPH_A, PIO_DEFAULT, (PIN_ATTR_DIGITAL|PIN_ATTR_COMBO), NO_ADC, NO_ADC, NOT_ON_PWM, NOT_ON_TIMER },
 
   // END
