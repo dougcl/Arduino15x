@@ -23,8 +23,8 @@
 #ifndef __SAM3S4A__
 #define CDC_SERIAL_BUFFER_SIZE	512
 #else
-//increase to improve CDC_RX performance for large data transfers
-#define CDC_SERIAL_BUFFER_SIZE	1024 
+//Moved to USBAPI.h so user sketch can see it.
+//#define CDC_SERIAL_BUFFER_SIZE	1024 
 #endif//SAM3S4A
 
 /* For information purpose only since RTS is not always handled by the terminal application */
@@ -254,6 +254,80 @@ int Serial_::peek(void)
 		return buffer->buffer[buffer->tail];
 	}
 }
+
+#ifdef __SAM3S4A__
+//extended Serial class in USBAPI.h to provide this bulk read method.
+//User code must supply a pointer to receive the data. The number of
+//bytes actually read is returned. The idea is to quere SerialUSB.available()
+//and pass it in as len to this method to read all available bytes from the 
+//ring buffer in one shot. This should realize full SAM3S transmit bandwidth.
+
+//Here is an example sketch to demonstrate:
+/*
+	char rx_bytes[CDC_SERIAL_BUFFER_SIZE];
+	int len;
+	String bytes_read;
+
+	void setup() {
+	  SerialUSB.begin(9600); 
+	}
+
+	void loop() {
+	  if (SerialUSB.available() > 0) {
+	    bytes_read = "";
+	    len = SerialUSB.available();
+	    len = SerialUSB.read((uint8_t*)&rx_bytes,len);
+	    for (int i=0;i<len;i++){
+	      bytes_read = bytes_read + rx_bytes[i];
+	    }
+	    SerialUSB.print("you typed ");
+	    SerialUSB.println(bytes_read);
+	  }
+	}
+*/
+int Serial_::read(uint8_t* d, uint32_t len)
+{
+	ring_buffer* buffer = &cdc_rx_buffer;
+	
+	// if the head isn't ahead of the tail, we don't have any characters
+	if (buffer->head == buffer->tail)
+	{
+		return 0;
+	}
+	else
+	{
+		uint8_t* ptr_dest = d;
+		uint32_t bytes_avail = this->available(); //number of bytes available in ring buffer
+		uint32_t fifo_count = USBD_Available(CDC_RX); //bytes available to be read in SAM3S fifo
+		//Don't try to read more bytes than are available in the ring buffer
+		if (len > bytes_avail) {
+			len = bytes_avail;
+		}
+		
+		//Now read the bytes from the ring buffer into the user's requested location
+		uint32_t i;
+		for (i = 0; i < len; ++i) {
+			*ptr_dest++ = buffer->buffer[buffer->tail];
+			buffer->tail = (uint32_t)(buffer->tail+1) % CDC_SERIAL_BUFFER_SIZE;
+		}
+		
+		//Now see if there is more data available from the host
+		if (fifo_count) {
+			//read fifo into ring buffer
+			accept();
+		} else {
+			//All bytes read from fifo and buffer. Turn calling of accept() back over to interrupt.
+			if (!this->available()){
+				udd_enable_endpoint_interrupt(CDC_RX);
+			}
+		}
+		
+	}
+	return len;
+}
+#endif //SAM3S4A
+
+
 
 int Serial_::read(void)
 {

@@ -23,6 +23,11 @@
 
 #include "RingBuffer.h"
 
+#ifdef __SAM3S4A__
+//increase to improve CDC_RX performance for large data transfers
+#define CDC_SERIAL_BUFFER_SIZE	256 
+#endif//SAM3S4A
+
 //================================================================================
 //================================================================================
 //	USB
@@ -56,6 +61,10 @@ public:
 	virtual void accept(void);
 	virtual int peek(void);
 	virtual int read(void);
+#ifdef __SAM3S4A__
+	//add bulk read capability. Returns number of bytes read.
+	virtual int read(uint8_t* data, uint32_t len);
+#endif
 	virtual void flush(void);
 	virtual size_t write(uint8_t);
 	virtual size_t write(const uint8_t *buffer, size_t size);
@@ -214,7 +223,6 @@ int USBD_SendControl(uint8_t flags, const void* d, uint32_t len);
 int USBD_RecvControl(void* d, uint32_t len);
 int USBD_SendInterfaces(void);
 bool USBD_ClassInterfaceRequest(Setup& setup);
-
 
 uint32_t USBD_Available(uint32_t ep);
 uint32_t USBD_SendSpace(uint32_t ep);
