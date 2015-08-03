@@ -112,7 +112,7 @@ extern "C"{
 #define SPI_INTERFACES_COUNT 1
 
 #define SPI_INTERFACE        SPI0
-#define SPI_INTERFACE_ID     ID_SPI0
+#define SPI_INTERFACE_ID     ID_SPI
 #define SPI_CHANNELS_NUM 4
 #define PIN_SPI_SS0          (13u)
 #define PIN_SPI_SS1          (15u)
