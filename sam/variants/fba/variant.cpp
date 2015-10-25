@@ -37,13 +37,15 @@
  *  13       NPCS0 |  PA11  | "NPCS0"
  *  14       NPCS2 |  PA10  | "NPCS2"
  *  15       NPCS1 |  PA9   | "NPCS1"
- *  16             |  PA6   | 
- *  17       NPCS3 |  PA5   | "NPCS3"
- *  18       TWCK0 |  PA4   | "SCL"
- *  19       TWD0  |  PA3   | "SDA"
- *  20             |  PA2   | "DO-AI-SELECT"
- *  21             |  PA1   | "BUS1"
- *  22             |  PA0   | "BUS0"
+ *  16       TWD1  |  PB4   | "SDA1"
+ *  17             |  PA6   |
+ *  18       NPCS3 |  PA5   | "NPCS3"
+ *  19       TWCK0 |  PA4   | "SCL0"
+ *  20       TWD0  |  PA3   | "SDA0"
+ *  21             |  PA2   | "DO-AI-SELECT"
+ *  22             |  PA1   | "BUS1"
+ *  23             |  PA0   | "BUS0"
+ *  24       TWCK1 |  PB5   | "SCL1"
  */
 
 #ifdef __cplusplus
@@ -88,22 +90,31 @@ extern const PinDescription g_APinDescription[]=
   { PIOA, PIO_PA10B_NPCS2,ID_PIOA, PIO_PERIPH_B, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // NPCS2
   // 15 - SPI CS1
   { PIOA, PIO_PA9B_NPCS1, ID_PIOA, PIO_PERIPH_B, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // NPCS1
-  // 16 unused
-  { PIOA, PIO_PA6,             ID_PIOA, PIO_OUTPUT_0, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // PIN 16
-  // 17 - SPI CS3
+  // 16 - TWD1
+  { PIOB, PIO_PB4A_TWD1,       ID_PIOB, PIO_PERIPH_A, PIO_DEFAULT, PIN_ATTR_DIGITAL,                  NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // TWD1 - SDA1
+  // 17 unused
+  { PIOA, PIO_PA6,             ID_PIOA, PIO_OUTPUT_0, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // PIN 17
+  // 18 - SPI CS3
   { PIOA, PIO_PA5B_NPCS3, ID_PIOA, PIO_PERIPH_B, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // NPCS3
-  // 18/19 - TWI0
+  // 19/20 - TWI0
   { PIOA, PIO_PA4A_TWCK0,      ID_PIOA, PIO_PERIPH_A, PIO_DEFAULT, PIN_ATTR_DIGITAL,                  NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // TWCK0 - SCL0
   { PIOA, PIO_PA3A_TWD0,       ID_PIOA, PIO_PERIPH_A, PIO_DEFAULT, PIN_ATTR_DIGITAL,                  NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // TWD0 - SDA0
-  // 20 AI Select
+  // 21 AI Select
   { PIOA, PIO_PA2,            ID_PIOA, PIO_OUTPUT_0, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // DO-AI_SELECT
-  // 21/22 Bus select
+  // 22/23 Bus select
   { PIOA, PIO_PA1,             ID_PIOA, PIO_INPUT, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // BUS1
   { PIOA, PIO_PA0,             ID_PIOA, PIO_INPUT, PIO_DEFAULT, PIN_ATTR_DIGITAL,                 NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // BUS0
-
-  // 23- TWI0 all pins
+  // 24 - TWCK1
+  { PIOB, PIO_PB5A_TWCK1,       ID_PIOB, PIO_PERIPH_A, PIO_DEFAULT, PIN_ATTR_DIGITAL,                  NO_ADC, NO_ADC, NOT_ON_PWM,  NOT_ON_TIMER }, // TWCK1 - SCL1
+  
+  
+  // 25- TWI0 all pins
   { PIOA, PIO_PA3A_TWD0|PIO_PA4A_TWCK0, ID_PIOA, PIO_PERIPH_A, PIO_DEFAULT, (PIN_ATTR_DIGITAL|PIN_ATTR_COMBO), NO_ADC, NO_ADC, NOT_ON_PWM, NOT_ON_TIMER },
+  // 26 - TWI1 all pins
+  { PIOB, PIO_PB4A_TWD1|PIO_PB5A_TWCK1, ID_PIOB, PIO_PERIPH_A, PIO_DEFAULT, (PIN_ATTR_DIGITAL|PIN_ATTR_COMBO), NO_ADC, NO_ADC, NOT_ON_PWM, NOT_ON_TIMER },
 
+  
+  
   // END
   { NULL, 0, 0, PIO_NOT_A_PIN, PIO_DEFAULT, 0, NO_ADC, NO_ADC, NOT_ON_PWM, NOT_ON_TIMER }
 } ;

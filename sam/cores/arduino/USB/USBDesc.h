@@ -18,7 +18,7 @@
 #define __USBDESC_H__
 
 #define CDC_ENABLED
-#ifndef __SAM3S4A__
+#ifndef __SAM3S4A__ //tackle HID later
 #define HID_ENABLED
 #endif
 
@@ -41,6 +41,7 @@
 #define CDC_ACM_INTERFACE	0	// CDC ACM
 #define CDC_DATA_INTERFACE	1	// CDC Data
 #ifdef __SAM3S4A__
+//bump endpoints up to 3/4/5 for CDC because 1/2/3 won't work.
  #define CDC_FIRST_ENDPOINT	3 
 #else
  #define CDC_FIRST_ENDPOINT	1

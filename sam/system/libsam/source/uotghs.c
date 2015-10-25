@@ -36,7 +36,7 @@ void UDP_Handler( void )
 	if (gpf_isr)
 		gpf_isr();
 }
-#endif /* SAM3S4A */
+#endif /* SAM3S_SERIES */
 
 #if SAM3XA_SERIES
 
