@@ -216,6 +216,10 @@ void init( void )
   PIOB->PIO_OWER = 0xFFFFFFFF;
   //PIOC->PIO_OWER = 0xFFFFFFFF;
   //PIOD->PIO_OWER = 0xFFFFFFFF;
+  
+  
+  //turn off JTAG pins
+  MATRIX->CCFG_SYSIO = CCFG_SYSIO_SYSIO7 | CCFG_SYSIO_SYSIO6 | CCFG_SYSIO_SYSIO5 | CCFG_SYSIO_SYSIO4;
 
   // Initialize Serial port U(S)ART pins
   //PIO_Configure(

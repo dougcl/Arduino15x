@@ -16,7 +16,7 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#ifndef _VARIANT_FBA_
+#ifndef _VARIANT_FBA_ 
 #define _VARIANT_FBA_
 
 /*----------------------------------------------------------------------------
@@ -156,6 +156,8 @@ static const uint8_t SCK  = PIN_SPI_SCK;
 #define WIRE_ISR_HANDLER     TWI0_Handler
 #define WIRE_ISR_ID          TWI0_IRQn
 
+//Note this must be commented out and WIRE_INTERFACES_COUNT set to 1
+//if you want to use 16 and 24 as regular digital I/O.
 #define PIN_WIRE1_SDA        (16u)
 #define PIN_WIRE1_SCL        (24u)
 #define WIRE1_INTERFACE      TWI1
