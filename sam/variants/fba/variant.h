@@ -147,23 +147,22 @@ static const uint8_t SCK  = PIN_SPI_SCK;
 /*
  * Wire Interfaces
  */
-#define WIRE_INTERFACES_COUNT 2
+#define WIRE_INTERFACES_COUNT 1
 
-#define PIN_WIRE_SDA         (20u)
-#define PIN_WIRE_SCL         (19u)
-#define WIRE_INTERFACE       TWI0
-#define WIRE_INTERFACE_ID    ID_TWI0
-#define WIRE_ISR_HANDLER     TWI0_Handler
-#define WIRE_ISR_ID          TWI0_IRQn
+#define PIN_WIRE_SDA        (16u)
+#define PIN_WIRE_SCL        (24u)
+#define WIRE_INTERFACE      TWI1
+#define WIRE_INTERFACE_ID   ID_TWI1
+#define WIRE_ISR_HANDLER    TWI1_Handler
+#define WIRE_ISR_ID         TWI1_IRQn
 
-//Note this must be commented out and WIRE_INTERFACES_COUNT set to 1
-//if you want to use 16 and 24 as regular digital I/O.
-#define PIN_WIRE1_SDA        (16u)
-#define PIN_WIRE1_SCL        (24u)
-#define WIRE1_INTERFACE      TWI1
-#define WIRE1_INTERFACE_ID   ID_TWI1
-#define WIRE1_ISR_HANDLER    TWI1_Handler
-#define WIRE1_ISR_ID         TWI1_IRQn
+//This one uses custom I2C library.
+#define PIN_WIRE1_SDA         (20u)
+#define PIN_WIRE1_SCL         (19u)
+#define WIRE1_INTERFACE       TWI0
+#define WIRE1_INTERFACE_ID    ID_TWI0
+#define WIRE1_ISR_HANDLER     TWI0_Handler
+#define WIRE1_ISR_ID          TWI0_IRQn
 
 
 /*
