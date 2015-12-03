@@ -117,7 +117,7 @@ extern "C"{
 #define PIN_SPI_SS0          (13u)
 #define PIN_SPI_SS1          (15u)
 #define PIN_SPI_SS2          (14u)
-#define PIN_SPI_SS3          (17u)
+#define PIN_SPI_SS3          (18u)
 #define PIN_SPI_MOSI         (11u)
 #define PIN_SPI_MISO         (12u)
 #define PIN_SPI_SCK          (10u)
